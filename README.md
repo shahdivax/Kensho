@@ -270,6 +270,6 @@ Having issues? Here's how to get help:
 
 **Made with 🧘‍♂️ for mindful learning**
 
-[Documentation](docs/)
+[Documentation](docs/) • [Contributing](CONTRIBUTING.md) • [License](LICENSE) • [Changelog](CHANGELOG.md)
 
 </div>
