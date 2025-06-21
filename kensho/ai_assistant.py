@@ -271,7 +271,7 @@ class KenshoAIAssistant:
             
             Each question should have:
             - A clear, specific question
-            - 4 multiple choice options (A, B, C, D)
+            - 4 multiple choice options
             - One correct answer
             - A detailed explanation of why the answer is correct
             

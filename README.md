@@ -4,7 +4,7 @@
 
 <div align="center">
 
-![Kensho Banner](https://via.placeholder.com/800x200/6366f1/ffffff?text=🌌+Kensho+AI+Learning+Assistant)
+![Kensho Banner](assets\banner.png)
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)](https://python.org)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green?logo=node.js&logoColor=white)](https://nodejs.org)
@@ -15,6 +15,36 @@
 </div>
 
 Kensho is an intelligent learning companion that transforms how you interact with documents, PDFs, and YouTube videos. Using advanced AI, it helps you understand, analyze, and learn from your content through interactive conversations, smart summaries, flashcards, and quizzes.
+
+## 📸 Screenshots
+
+<div align="center">
+
+### 🏠 **Main Dashboard**
+![Main Dashboard](assets/dashboard.png)
+*Clean, intuitive interface with session management and quick actions*
+
+### 💬 **Interactive Chat**
+![Chat Interface](assets/chat.png)
+*AI-powered conversations with markdown support and source citations*
+
+### 📄 **Document Processing**
+![Document Upload](assets/document-upload.png)
+*Seamless PDF upload and processing with real-time status updates*
+
+### 🧠 **Smart Summaries**
+![Smart Summaries](assets/summaries.png)
+*Comprehensive content summaries with key insights and takeaways*
+
+### 🃏 **Flashcards**
+![Flashcards](assets/flashcards.png)
+*Interactive study cards generated from your content using Bloom's taxonomy*
+
+### 🧩 **Interactive Quizzes**
+![Quizzes](assets/quizzes.png)
+*Engaging quizzes with multiple choice questions and instant feedback*
+
+</div>
 
 ## ✨ Features
 
