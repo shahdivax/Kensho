@@ -1,0 +1,49 @@
+# Start of Selection
+# Start Generation Here
+# Python bytecode files
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment variables
+.env
+*.env
+
+# Virtual environment directories
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# VS Code settings
+.vscode/
+
+# Pytest cache
+.pytest_cache/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# Mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Docker files
+docker-compose.override.yml
+*.dockerfile
+
+# Local data directories
+sessions/
+data/
+# End Generation Here
+# End of Selection

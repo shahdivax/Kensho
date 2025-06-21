@@ -1,0 +1,23 @@
+# Start of Selection
+fastapi
+gradio
+uvicorn
+python-dotenv
+PyMuPDF
+yt-dlp
+openai
+groq
+faiss-cpu
+sentence-transformers
+langchain
+langchain-community
+pydub
+tqdm
+numpy
+pandas
+markdown
+Pillow
+aiofiles
+python-multipart
+hf_xet
+# End of Selection

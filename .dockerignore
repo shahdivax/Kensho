@@ -1,0 +1,86 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+README_HUGGINGFACE.md
+SETUP.md
+docs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Node.js (frontend build artifacts will be copied separately)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env*
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Test files
+test_*.py
+*_test.py
+tests/
+
+# Sessions (will be created at runtime)
+sessions/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+
+# Docker
+docker-compose*.yml
+Dockerfile.dev 
