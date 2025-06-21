@@ -4,7 +4,7 @@
 
 <div align="center">
 
-![Kensho Banner](assets\banner.png)
+![Kensho Banner](assets/banner.png)
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)](https://python.org)
 [![Node.js](https://img.shields.io/badge/Node.js-18+-green?logo=node.js&logoColor=white)](https://nodejs.org)
