@@ -15,10 +15,11 @@ from datetime import datetime
 import asyncio
 from pathlib import Path
 import re
+import shutil
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -83,6 +84,9 @@ class QuizRequest(BaseModel):
 class ExportRequest(BaseModel):
     session_id: str
     export_options: List[str]
+
+class MindMapRequest(BaseModel):
+    session_id: str
 
 # Utility functions
 def generate_session_id() -> str:
@@ -327,7 +331,8 @@ async def upload_youtube(input_data: YouTubeInput, background_tasks: BackgroundT
         return {
             "session_id": input_data.session_id,
             "document": document_info,
-            "message": f"Successfully processed YouTube video"
+            "transcript": transcript,
+            "message": "Successfully processed YouTube video"
         }
         
     except HTTPException:
@@ -380,6 +385,98 @@ async def chat(message: ChatMessage):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error in chat: {str(e)}")
+
+@app.post("/chat/stream")
+async def chat_stream(message: ChatMessage):
+    """Stream chat response tokens for real-time UI updates (Gemini or OpenAI)."""
+    session = get_session(message.session_id)
+
+    if not session["vector_store_path"]:
+        raise HTTPException(status_code=400, detail="No document uploaded for this session")
+
+    # Retrieve relevant context for the query
+    context_chunks = vector_store.search(
+        message.message,
+        session["vector_store_path"],
+        top_k=5
+    )
+
+    # Build prompts
+    context_text = ai_assistant._prepare_context(context_chunks)
+    system_prompt = ai_assistant._get_rag_system_prompt()
+    user_prompt = f"""
+    Based on the following context from the document, please answer the question.
+
+    CONTEXT:
+    {context_text}
+
+    QUESTION: {message.message}
+
+    Provide a comprehensive answer that cites sources like [source: page X] or [timestamp: MM:SS].
+    If context is insufficient, say what's missing.
+    """
+
+    # Helper to persist chat entry after full answer is obtained
+    def persist_chat(answer_text: str, sources: list, confidence: float):
+        chat_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "user_message": message.message,
+            "ai_response": answer_text.strip(),
+            "sources": sources,
+            "confidence": confidence,
+        }
+        session["chat_history"].append(chat_entry)
+
+    async def fallback_stream():
+        """Generate full answer then yield tokens one-by-one (works for any model)."""
+        response = ai_assistant.answer_question(message.message, context_chunks, session)
+        answer_text = response["answer"]
+        async def gen():
+            accumulated = ""
+            for tok in answer_text.split():
+                accumulated += tok + " "
+                yield tok + " "
+                await asyncio.sleep(0)
+            persist_chat(accumulated, response["sources"], response["confidence"])
+        return StreamingResponse(gen(), media_type="text/plain")
+
+    # Try native streaming first
+    try:
+        client = ai_assistant.client
+        stream = client.chat.completions.create(
+            model=ai_assistant.default_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1000,
+            stream=True
+        )
+
+        def native_stream_gen():
+            answer_parts = []
+            for chunk in stream:
+                # OpenAI-compatible chunks
+                delta = None
+                if hasattr(chunk, "choices") and chunk.choices:
+                    delta = chunk.choices[0].delta.content or ""
+                # Gemini-compatible (text) – fall back to 'text' attribute if present
+                if delta is None and hasattr(chunk, "text"):
+                    delta = getattr(chunk, "text") or ""
+                if not delta:
+                    continue
+                answer_parts.append(delta)
+                yield delta
+            full_answer = "".join(answer_parts)
+            persist_chat(full_answer, ai_assistant._extract_sources_from_chunks(context_chunks), ai_assistant._calculate_confidence(context_chunks, message.message))
+
+        return StreamingResponse(native_stream_gen(), media_type="text/plain")
+
+    except Exception as streaming_error:
+        # Native streaming failed – log for debugging and fallback to tokenised streaming
+        print(f"⚠️ Native streaming unavailable, falling back. Reason: {streaming_error}")
+        return await fallback_stream()
 
 @app.post("/summary")
 async def generate_summary(request: SummaryRequest):
@@ -486,16 +583,66 @@ async def generate_quiz(request: QuizRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating quiz: {str(e)}")
 
+@app.post("/mindmap")
+async def generate_mindmap(request: MindMapRequest):
+    """Generate a mind map from the uploaded content."""
+    session = get_session(request.session_id)
+    
+    if not session['vector_store_path']:
+        raise HTTPException(status_code=400, detail="No document uploaded for this session")
+    
+    try:
+        # Get chunks for mind map generation
+        chunks = vector_store.get_all_chunks(session['vector_store_path'])
+        full_text = "\n\n".join([chunk['text'] for chunk in chunks])
+        
+        # Generate mind map using AI assistant
+        response = ai_assistant.client.chat.completions.create(
+            model=ai_assistant.default_model,
+            messages=[
+                {
+                    "role": "system", 
+                    "content": """You are an expert educator creating mind maps. Output MUST be a pure markdown bullet list using hyphens ('-') for each node, with exactly two leading spaces per indent level. Do NOT include any quotes (\"), parentheses ( ), code fences, numbering, or additional punctuation that could break parsing. Each logical concept should be on its own line. Follow this hierarchy guidelines:
+                    - Top-level themes as primary branches
+                    - Subtopics as secondary branches
+                    - Key details as tertiary branches
+                    Only provide the bullet list – no headings, introductions, or extra commentary."""
+                },
+                {
+                    "role": "user", 
+                    "content": f"Create a comprehensive mind map from this content:\n\n{full_text}"
+                }
+            ],
+            temperature=0.3
+        )
+        
+        mindmap_content = response.choices[0].message.content
+        
+        # Store mind map in session (you could add this if needed)
+        mindmap_entry = {
+            'content': mindmap_content,
+            'generated_at': datetime.now().isoformat()
+        }
+        
+        return {
+            "mindmap": mindmap_content,
+            "session_id": request.session_id,
+            "generated_at": mindmap_entry['generated_at']
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating mind map: {str(e)}")
+
 @app.post("/export")
 async def export_session(request: ExportRequest):
     """Export session data in various formats."""
     session = get_session(request.session_id)
     
     try:
-        # Create temporary directory for export files
-        with tempfile.TemporaryDirectory() as temp_dir:
-            export_files = []
-            
+        temp_dir = tempfile.mkdtemp()
+        export_files = []
+
+        try:
             # Export summaries as Markdown
             if 'summaries' in request.export_options and session['summaries']:
                 summary_file = os.path.join(temp_dir, 'summaries.md')
@@ -507,14 +654,14 @@ async def export_session(request: ExportRequest):
                         f.write(f"**Key Topics:** {', '.join(summary['key_topics'])}\n\n")
                         f.write("---\n\n")
                 export_files.append(summary_file)
-            
+
             # Export chat history as JSON
             if 'chat' in request.export_options and session['chat_history']:
                 chat_file = os.path.join(temp_dir, 'chat_history.json')
                 with open(chat_file, 'w', encoding='utf-8') as f:
                     json.dump(session['chat_history'], f, indent=2, ensure_ascii=False)
                 export_files.append(chat_file)
-            
+
             # Export flashcards as CSV
             if 'flashcards' in request.export_options and session['flashcards']:
                 flashcard_file = os.path.join(temp_dir, 'flashcards.csv')
@@ -524,13 +671,16 @@ async def export_session(request: ExportRequest):
                         for card in card_set['cards']:
                             f.write(f'"{card["front"]}","{card["back"]}","{card["level"]}","{",".join(card.get("tags", []))}"\n')
                 export_files.append(flashcard_file)
-            
+
             # Create ZIP file
-            zip_path = os.path.join(temp_dir, f'kensho_session_{request.session_id}.zip')
+            zip_handle = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+            zip_path = zip_handle.name
+            zip_handle.close()
+
             with zipfile.ZipFile(zip_path, 'w') as zipf:
                 for file_path in export_files:
                     zipf.write(file_path, os.path.basename(file_path))
-                
+
                 # Add session metadata
                 metadata = {
                     'session_id': request.session_id,
@@ -545,15 +695,21 @@ async def export_session(request: ExportRequest):
                         'quizzes': len(session['quizzes'])
                     }
                 }
-                
+
                 zipf.writestr('session_metadata.json', json.dumps(metadata, indent=2))
-            
-            # Return the ZIP file
+
+            # Return the ZIP file and clean it up afterwards
+            from starlette.background import BackgroundTask
+
             return FileResponse(
                 zip_path,
                 media_type='application/zip',
-                filename=f'kensho_session_{request.session_id}.zip'
+                filename=f'kensho_session_{request.session_id}.zip',
+                background=BackgroundTask(lambda: os.remove(zip_path))
             )
+        finally:
+            # Clean the temp dir holding intermediate export files
+            shutil.rmtree(temp_dir, ignore_errors=True)
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error exporting session: {str(e)}")

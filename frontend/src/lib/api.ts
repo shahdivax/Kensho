@@ -171,6 +171,9 @@ export async function sendChatMessage(message: string, sessionId: string): Promi
   return response.json()
 }
 
+// Alias for sendChatMessage for compatibility
+export const sendMessage = sendChatMessage
+
 // Summary generation
 export async function generateSummary(
   sessionId: string,
@@ -211,6 +214,25 @@ export async function generateFlashcards(sessionId: string, numCards: number = 1
   
   if (!response.ok) {
     throw new Error('Failed to generate flashcards')
+  }
+  
+  return response.json()
+}
+
+// Mind map generation
+export async function generateMindMap(sessionId: string): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}/mindmap`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      session_id: sessionId,
+    }),
+  })
+  
+  if (!response.ok) {
+    throw new Error('Failed to generate mind map')
   }
   
   return response.json()
@@ -270,4 +292,28 @@ export async function healthCheck(): Promise<{ status: string; timestamp: string
   }
   
   return response.json()
+}
+
+export async function streamChatMessage(message: string, sessionId: string, onToken: (t:string)=>void) {
+  const res = await fetch(`${API_BASE_URL}/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json' },
+    body: JSON.stringify({ message, session_id: sessionId })
+  })
+  if (!res.ok || !res.body) throw new Error('stream failed')
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    onToken(decoder.decode(value))
+  }
+  // After stream completes, fetch latest chat entry to obtain sources & confidence
+  try {
+    const info = await getSessionInfo(sessionId)
+    const chat = info.session.chat_history || []
+    return chat[chat.length - 1] // return full chat entry
+  } catch {
+    return null
+  }
 } 
