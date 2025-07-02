@@ -11,7 +11,9 @@ import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 import dynamic from 'next/dynamic'
-import MermaidChart from '@/components/MermaidChart'
+
+// Dynamically load heavy Markmap component only on the client
+const MarkdownMindMap = dynamic(() => import('@/components/MarkdownMindMap'), { ssr: false })
 
 // Set up PDF.js worker (ESM module worker)
 pdfjs.GlobalWorkerOptions.workerSrc = `/pdf.worker.min.mjs`
@@ -535,8 +537,8 @@ export default function KenshoPage() {
     
     try {
       const result = await api.generateMindMap(sessionData.id)
-      const mm = markdownToMermaid(result.mindmap)
-      setMindMap(mm)
+      // API returns markdown bullet-list; feed directly to Markmap
+      setMindMap(result.mindmap)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Mind map generation failed')
     } finally {
@@ -1480,7 +1482,7 @@ export default function KenshoPage() {
 
               <div className="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg p-6 overflow-y-auto">
                 {mindMap ? (
-                  <MermaidChart chart={mindMap} />
+                  <MarkdownMindMap markdown={mindMap} />
                 ) : (
                   <div className="flex items-center justify-center h-full text-slate-400">
                     <div className="text-center">

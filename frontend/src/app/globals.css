@@ -452,3 +452,21 @@
     padding: 1.5rem;
   }
 }
+
+/* ===== Markmap dark theme overrides ===== */
+.markmap text {
+  fill: #e5e7eb; /* Tailwind slate-200 */
+}
+
+.markmap .markmap-foreign {
+  color: #e5e7eb;
+}
+
+.markmap .markmap-node {
+  cursor: pointer;
+}
+
+/* Slightly larger font for readability */
+.markmap text {
+  font-size: 0.875rem; /* 14px */
+}

@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
   },
   assetPrefix: process.env.NODE_ENV === 'production' ? '/static' : '',
   basePath: process.env.NODE_ENV === 'production' ? '/static' : '',
+  allowedDevOrigins: ['0.0.0.0'],
 };
 
 export default nextConfig;
