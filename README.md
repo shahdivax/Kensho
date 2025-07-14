@@ -59,12 +59,14 @@ Kensho is an intelligent learning companion that transforms how you interact wit
 - **Content Analysis**: Deep understanding of video content
 
 ### 💬 **Interactive Chat**
-- **Contextual Q&A**: Ask questions about your uploaded content
-- **Smart Responses**: AI-powered answers with source citations
+- **Contextual Q&A**: Ask questions grounded in your uploaded content
+- **Smart Responses**: AI-powered answers that reference the most relevant passages
 - **Markdown Support**: Beautiful formatting for all responses
 
 ### 📝 **Learning Tools**
-- **Smart Summaries**: Generate comprehensive content summaries
+- **Smart Summaries**: Generate concise or comprehensive overviews
+- **Concept Explanations**: Dive deep into any term or idea with a single click
+- **Detailed Mind Maps**: Visualize complex topics with multi-level maps
 - **Flashcards**: Auto-generated study cards based on Bloom's taxonomy
 - **Interactive Quizzes**: Test your knowledge with AI-generated questions
 - **Export Options**: Save your learning materials in various formats
