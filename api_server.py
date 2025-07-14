@@ -27,6 +27,7 @@ import uvicorn
 from kensho.document_processor import DocumentProcessor
 from kensho.vector_store import KenshoVectorStore
 from kensho.ai_assistant import KenshoAIAssistant
+from kensho.agent import get_agent_for_session
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -344,139 +345,65 @@ async def upload_youtube(input_data: YouTubeInput, background_tasks: BackgroundT
 
 @app.post("/chat")
 async def chat(message: ChatMessage):
-    """Chat with the AI about uploaded content."""
-    session = get_session(message.session_id)
-    
-    if not session['vector_store_path']:
-        raise HTTPException(status_code=400, detail="No document uploaded for this session")
+    """Chat with the AI about uploaded content using an agent."""
+    if not message.session_id:
+        raise HTTPException(status_code=400, detail="Session ID is required")
+
+    agent_executor = get_agent_for_session(message.session_id)
     
     try:
-        # Search for relevant context
-        context_chunks = vector_store.search(
-            message.message, 
-            session['vector_store_path'], 
-            top_k=5
-        )
+        # The agent manages its own history via the checkpointer
+        inputs = {"messages": [{"role": "user", "content": message.message}]}
+        config = {"configurable": {"thread_id": message.session_id}}
         
-        # Generate AI response
-        response = ai_assistant.answer_question(
-            message.message, 
-            context_chunks, 
-            session
-        )
+        # We don't stream here, just get the final result
+        final_state = agent_executor.invoke(inputs, config)
         
-        # Store in chat history
-        chat_entry = {
-            'timestamp': datetime.now().isoformat(),
-            'user_message': message.message,
-            'ai_response': response['answer'],
-            'sources': response['sources'],
-            'confidence': response['confidence']
-        }
-        
-        session['chat_history'].append(chat_entry)
-        
+        # The final response is the last AI message in the state
+        ai_response = final_state["messages"][-1]
+
+        # Mimic the old structure for the frontend for now
         return {
-            "response": response['answer'],
-            "sources": response['sources'],
-            "confidence": response['confidence'],
-            "chat_history": session['chat_history'][-10:]  # Return last 10 messages
+            "response": ai_response.content,
+            "confidence": 1.0, # Placeholder
+            "chat_history": [] # The agent manages history
         }
-        
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error in chat: {str(e)}")
+        print(f"❌ Agent Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error in chat agent: {str(e)}")
+
 
 @app.post("/chat/stream")
 async def chat_stream(message: ChatMessage):
-    """Stream chat response tokens for real-time UI updates (Gemini or OpenAI)."""
-    session = get_session(message.session_id)
+    """Stream chat response tokens from the agent."""
+    if not message.session_id:
+        raise HTTPException(status_code=400, detail="Session ID is required")
 
-    if not session["vector_store_path"]:
-        raise HTTPException(status_code=400, detail="No document uploaded for this session")
+    agent_executor = get_agent_for_session(message.session_id)
 
-    # Retrieve relevant context for the query
-    context_chunks = vector_store.search(
-        message.message,
-        session["vector_store_path"],
-        top_k=5
-    )
+    async def event_stream():
+        try:
+            inputs = {"messages": [{"role": "user", "content": message.message}]}
+            config = {"configurable": {"thread_id": message.session_id}}
 
-    # Build prompts
-    context_text = ai_assistant._prepare_context(context_chunks)
-    system_prompt = ai_assistant._get_rag_system_prompt()
-    user_prompt = f"""
-    Based on the following context from the document, please answer the question.
+            # Stream all events from the agent
+            async for event in agent_executor.astream_events(inputs, config=config, version="v1"):
+                kind = event["event"]
+                
+                # We're interested in the tokens streamed from the LLM
+                if kind == "on_chat_model_stream":
+                    chunk = event["data"]["chunk"]
+                    if chunk.content:
+                        # Yield the content of the chunk directly
+                        yield chunk.content
 
-    CONTEXT:
-    {context_text}
+        except Exception as e:
+            print(f"❌ Agent Streaming Error: {e}")
+            # Yield a final message indicating an error occurred
+            yield f"Sorry, an error occurred: {str(e)}"
 
-    QUESTION: {message.message}
-
-    Provide a comprehensive answer that cites sources like [source: page X] or [timestamp: MM:SS].
-    If context is insufficient, say what's missing.
-    """
-
-    # Helper to persist chat entry after full answer is obtained
-    def persist_chat(answer_text: str, sources: list, confidence: float):
-        chat_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "user_message": message.message,
-            "ai_response": answer_text.strip(),
-            "sources": sources,
-            "confidence": confidence,
-        }
-        session["chat_history"].append(chat_entry)
-
-    async def fallback_stream():
-        """Generate full answer then yield tokens one-by-one (works for any model)."""
-        response = ai_assistant.answer_question(message.message, context_chunks, session)
-        answer_text = response["answer"]
-        async def gen():
-            accumulated = ""
-            for tok in answer_text.split():
-                accumulated += tok + " "
-                yield tok + " "
-                await asyncio.sleep(0)
-            persist_chat(accumulated, response["sources"], response["confidence"])
-        return StreamingResponse(gen(), media_type="text/plain")
-
-    # Try native streaming first
-    try:
-        client = ai_assistant.client
-        stream = client.chat.completions.create(
-            model=ai_assistant.default_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.3,
-            max_tokens=1000,
-            stream=True
-        )
-
-        def native_stream_gen():
-            answer_parts = []
-            for chunk in stream:
-                # OpenAI-compatible chunks
-                delta = None
-                if hasattr(chunk, "choices") and chunk.choices:
-                    delta = chunk.choices[0].delta.content or ""
-                # Gemini-compatible (text) – fall back to 'text' attribute if present
-                if delta is None and hasattr(chunk, "text"):
-                    delta = getattr(chunk, "text") or ""
-                if not delta:
-                    continue
-                answer_parts.append(delta)
-                yield delta
-            full_answer = "".join(answer_parts)
-            persist_chat(full_answer, ai_assistant._extract_sources_from_chunks(context_chunks), ai_assistant._calculate_confidence(context_chunks, message.message))
-
-        return StreamingResponse(native_stream_gen(), media_type="text/plain")
-
-    except Exception as streaming_error:
-        # Native streaming failed – log for debugging and fallback to tokenised streaming
-        print(f"⚠️ Native streaming unavailable, falling back. Reason: {streaming_error}")
-        return await fallback_stream()
+    return StreamingResponse(event_stream(), media_type="text/plain")
 
 @app.post("/summary")
 async def generate_summary(request: SummaryRequest):
@@ -602,11 +529,21 @@ async def generate_mindmap(request: MindMapRequest):
             messages=[
                 {
                     "role": "system", 
-                    "content": """You are an expert educator creating mind maps. Output MUST be a pure markdown bullet list using hyphens ('-') for each node, with exactly two leading spaces per indent level. Do NOT include any quotes (\"), parentheses ( ), code fences, numbering, or additional punctuation that could break parsing. Each logical concept should be on its own line. Follow this hierarchy guidelines:
-                    - Top-level themes as primary branches
-                    - Subtopics as secondary branches
-                    - Key details as tertiary branches
-                    Only provide the bullet list – no headings, introductions, or extra commentary."""
+                    "content": """You are a world-class instructional designer. Craft a DETAILED mind-map that can serve as a visual syllabus.  
+OUTPUT RULES  
+1. Format as a pure markdown bullet list using a hyphen followed by a space (`- `).  
+2. Indentation defines hierarchy – **exactly two spaces per indent level** (Mermaid/Markmap friendly).  
+3. No code fences, numbers, quotation marks, or parentheses – plain text bullets only.  
+4. Limit any single bullet label to ~12 words so the map remains readable.  
+
+CONTENT GUIDELINES  
+• First line = broad subject (root).  
+• 2nd-level branches = major sections / chapters.  
+• 3rd-level = key concepts or skills under each section.  
+• 4th-level (optional) = pivotal facts, formulas, or examples.  
+• Capture relationships and prerequisite flow where helpful (e.g., "Derivatives -> Chain Rule").  
+
+Return **only** the bullet list – no title, no commentary."""
                 },
                 {
                     "role": "user", 

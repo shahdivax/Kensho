@@ -86,11 +86,13 @@ class DocumentProcessor:
                 cleaned_text = self._clean_pdf_text(text)
                 
                 if cleaned_text.strip():
+                    # Store per-page text without embedding explicit "[source]" tags.
                     page_texts.append({
                         'page': page_num + 1,
                         'text': cleaned_text
                     })
-                    full_text += f"\n[source: page {page_num + 1}]\n{cleaned_text}\n"
+                    # Append the cleaned text directly to the full document text.
+                    full_text += f"\n{cleaned_text}\n"
                 
                 print(f"📄 Processed page {page_num + 1}/{len(doc)}")
             
@@ -130,7 +132,11 @@ class DocumentProcessor:
             temp_session_id = self.create_session_id(text)
             
             # Chunk the text
-            chunks = self._chunk_text_with_metadata(text, "text", source_name)
+            # Remove any leftover citation / timestamp markers so chunks contain only clean content.
+            cleaned_for_chunks = re.sub(r"\[source: page \d+\]", "", text)
+            cleaned_for_chunks = re.sub(r"\[timestamp: \d{2}:\d{2}(?::\d{2})?\]", "", cleaned_for_chunks)
+
+            chunks = self._chunk_text_with_metadata(cleaned_for_chunks, "text", source_name)
             
             # Note: Don't save session data here as it will be handled by the API
             # The API will manage the session data using the correct session ID
@@ -243,7 +249,11 @@ class DocumentProcessor:
     
     def _chunk_text_with_metadata(self, text: str, doc_type: str, source: str) -> List[Dict]:
         """Chunk text and add metadata for citations."""
-        chunks = self.text_splitter.split_text(text)
+        # Remove any leftover citation / timestamp markers so chunks contain only clean content.
+        cleaned_for_chunks = re.sub(r"\[source: page \d+\]", "", text)
+        cleaned_for_chunks = re.sub(r"\[timestamp: \d{2}:\d{2}(?::\d{2})?\]", "", cleaned_for_chunks)
+
+        chunks = self.text_splitter.split_text(cleaned_for_chunks)
         
         chunks_with_metadata = []
         for i, chunk in enumerate(chunks):

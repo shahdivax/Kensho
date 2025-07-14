@@ -6,7 +6,6 @@ Kensho offers a comprehensive suite of AI-powered learning tools designed to hel
 
 ### PDF Analysis
 - **Smart Text Extraction**: Advanced parsing that maintains document structure
-- **Page-Aware Citations**: Accurate source tracking with page numbers
 - **Multi-Column Support**: Handles complex layouts and formatting
 - **Image Text Recognition**: Extracts text from images within PDFs
 - **Metadata Preservation**: Retains document information and properties
@@ -35,7 +34,7 @@ Kensho offers a comprehensive suite of AI-powered learning tools designed to hel
 
 ### Contextual Q&A
 - **Semantic Search**: Finds relevant content using advanced vector embeddings
-- **Source Citations**: Every answer includes specific references
+- **Context-Grounded Answers**: Replies quote the most relevant passages without cluttering citations
 - **Follow-up Questions**: Maintains conversation context
 - **Multi-turn Dialogue**: Supports complex, ongoing conversations
 
@@ -52,10 +51,11 @@ Kensho offers a comprehensive suite of AI-powered learning tools designed to hel
 
 ## 📝 Learning Tools
 
-### Smart Summaries
-- **Multiple Types**: Comprehensive, bullet points, or executive summaries
+### Smart Summaries & Explanations
+- **Multiple Types**: Comprehensive, key-points, or executive summaries
 - **Length Control**: Customizable summary length (100-2000 words)
 - **Key Topics**: Automatically extracts main themes
+- **Concept Explanations**: One-click deep dives into any term or idea
 - **Structured Output**: Well-organized, hierarchical summaries
 
 ### Flashcards
@@ -68,12 +68,13 @@ Kensho offers a comprehensive suite of AI-powered learning tools designed to hel
   - **Create**: Synthesis and creation prompts
 - **Spaced Repetition**: Optimized for effective learning
 
-### Interactive Quizzes
+### Interactive Mind Maps & Quizzes
 - **Multiple Choice**: Well-crafted questions with explanations
 - **Difficulty Levels**: Easy, medium, hard, or mixed
 - **Explanations**: Detailed explanations for correct answers
 - **Progress Tracking**: See your performance over time
 - **Adaptive Questioning**: Adjusts difficulty based on performance
+- **Detailed Mind Maps**: Multi-level bullet maps suitable for Markmap/Mermaid
 
 ## 🎨 User Interface
 

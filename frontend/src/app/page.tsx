@@ -693,25 +693,13 @@ export default function KenshoPage() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => handleSelectedTextAction('Create mind map for')}
+                onClick={() => handleSelectedTextAction('Chat about')}
                 className="text-xs text-white hover:bg-slate-700"
               >
-                <Map className="h-3 w-3 mr-1" />
-                Mind Map
+                <MessageCircle className="h-3 w-3 mr-1" />
+                Ask Chat
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  navigator.clipboard.writeText(selectedPdfText)
-                  setTextActionMenu({x: 0, y: 0, show: false})
-                }}
-                className="text-xs text-white hover:bg-slate-700"
-              >
-                <Copy className="h-3 w-3 mr-1" />
-                Copy
-              </Button>
-              </div>
+            </div>
           )}
 
           {/* Zoom Controls */}
@@ -1587,19 +1575,6 @@ export default function KenshoPage() {
             >
               <FileSearch className="h-3 w-3 mr-1" />
               Summarize
-            </Button>
-            <Button
-              size="sm" 
-              variant="ghost"
-              onClick={() => {
-                setChatInput(`Create a mind map for: "${selectedText}"`)
-                setShowTextActions(false)
-                setActiveWorkspaceTab('chat')
-              }}
-              className="text-xs hover:bg-slate-700"
-            >
-              <Map className="h-3 w-3 mr-1" />
-              Mind Map
             </Button>
             <Button
               size="sm" 

@@ -11,6 +11,11 @@ faiss-cpu
 sentence-transformers
 langchain
 langchain-community
+langchain-openai
+langchain-groq
+langchain-google-genai
+langgraph
+duckduckgo-search
 pydub
 tqdm
 numpy

@@ -38,54 +38,59 @@ class KenshoAIAssistant:
         self.default_model = "gemini-2.0-flash" if self.gemini_api_key else "gpt-4o-mini"
         self.client = self.gemini_client if self.gemini_api_key else self.openai_client
     
-    def answer_question(self, question: str, context_chunks: List[Dict], 
-                       session_metadata: Dict = None) -> Dict[str, Any]:
+    def answer_question(self, question: str, context_chunks: List[Dict],
+                       chat_history: List[Dict] = None) -> Dict[str, Any]:
         """
-        Answer a question using RAG with citation-aware responses.
-        
+        Answer a question using RAG with citation-aware responses, maintaining conversation history.
+
         Args:
             question: User's question
             context_chunks: Relevant chunks from vector search
-            session_metadata: Session metadata for context
-            
+            chat_history: Previous messages in the conversation for context
+
         Returns:
             Dict with answer, sources, and confidence
         """
         try:
             # Prepare context
             context_text = self._prepare_context(context_chunks)
-            
+
             # Create system prompt
             system_prompt = self._get_rag_system_prompt()
-            
+
+            # Build conversation history for the model
+            messages = []
+            if chat_history:
+                for entry in chat_history[-5:]: # Use last 5 turns
+                    messages.append({"role": "user", "content": entry["user_message"]})
+                    messages.append({"role": "assistant", "content": entry["ai_response"]})
+
             # Create user prompt
             user_prompt = f"""
-            Based on the following context from the document, please answer the question.
-            
+            Here is the relevant context from the document(s):
+            ---
             CONTEXT:
             {context_text}
-            
+            ---
+            Based on the context and our conversation so far, please answer my question.
+
             QUESTION: {question}
-            
-            Please provide a comprehensive answer based on the context provided. 
-            Include specific citations using the format [source: page X] or [timestamp: MM:SS] when referencing information.
-            If the context doesn't contain enough information to fully answer the question, 
-            please indicate what information is missing.
             """
-            
+            messages.append({"role": "user", "content": user_prompt})
+
             # Generate response
             response = self.client.chat.completions.create(
                 model=self.default_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    *messages
                 ],
-                temperature=0.3,
-                max_tokens=1000
+                temperature=0.5, # Slightly more creative for tutoring
+                max_tokens=1500
             )
-            
+
             answer = response.choices[0].message.content
-            
+
             # Extract citations and sources
             sources = self._extract_sources_from_chunks(context_chunks)
             citations = self._extract_citations_from_answer(answer)
@@ -328,75 +333,77 @@ class KenshoAIAssistant:
             }
     
     def explain_concept(self, concept: str, context_chunks: List[Dict], 
-                       explanation_style: str = "simple") -> Dict[str, Any]:
+                       explanation_style: str = "simple",
+                       chat_history: List[Dict] = None) -> Dict[str, Any]:
         """
-        Provide detailed explanation of a concept based on context.
-        
+        Explain a specific concept using document context and general knowledge.
+
         Args:
-            concept: Concept to explain
-            context_chunks: Relevant context chunks
-            explanation_style: Style of explanation (simple, detailed, analogical)
-            
+            concept: The concept to explain
+            context_chunks: Relevant chunks from vector search for context
+            explanation_style: The style of explanation (e.g., "simple", "detailed", "analogy")
+            chat_history: Previous messages in the conversation for context
+
         Returns:
-            Dict with explanation and examples
+            A dictionary with the explanation.
         """
         try:
             context_text = self._prepare_context(context_chunks)
-            
-            style_prompts = {
-                "simple": "Explain this concept in simple, easy-to-understand terms.",
-                "detailed": "Provide a comprehensive, detailed explanation with technical depth.",
-                "analogical": "Use analogies and real-world examples to explain this concept."
-            }
-            
-            system_prompt = f"""
-            You are an expert educator and explainer. {style_prompts.get(explanation_style, style_prompts['simple'])}
-            Use the provided context to give accurate, well-structured explanations.
-            Include examples when helpful and cite sources when referencing specific information.
-            """
-            
+
+            system_prompt = self._get_rag_system_prompt() # Re-use the tutor persona
+
+            # Build conversation history for the model
+            messages = []
+            if chat_history:
+                for entry in chat_history[-5:]:
+                    messages.append({"role": "user", "content": entry["user_message"]})
+                    messages.append({"role": "assistant", "content": entry["ai_response"]})
+
             user_prompt = f"""
-            Based on the following context, please explain the concept: "{concept}"
-            
-            CONTEXT:
+            Relevant document context:
+            ---
             {context_text}
-            
-            Provide a clear explanation that helps deepen understanding of this concept.
+            ---
+            I need to understand a concept better.
+
+            CONCEPT: {concept}
+            EXPLANATION STYLE: {explanation_style}
+
+            Please explain this concept to me. Use the document context as a primary source, but also draw on your general knowledge to provide a comprehensive and easy-to-understand explanation. If the context is sparse, rely more on your general knowledge but mention that the document has limited information.
             """
-            
+            messages.append({"role": "user", "content": user_prompt})
+
             response = self.client.chat.completions.create(
                 model=self.default_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    *messages
                 ],
-                temperature=0.3,
-                max_tokens=1000
+                temperature=0.6,
+                max_tokens=1200
             )
-            
+
             explanation = response.choices[0].message.content
-            
+
             return {
-                'concept': concept,
                 'explanation': explanation,
                 'style': explanation_style,
-                'sources': self._extract_sources_from_chunks(context_chunks),
                 'timestamp': datetime.now().isoformat()
             }
-            
         except Exception as e:
             return {
-                'concept': concept,
-                'explanation': f"Error generating explanation: {str(e)}",
+                'explanation': f"Sorry, I encountered an error while trying to explain '{concept}': {str(e)}",
                 'style': explanation_style,
-                'sources': [],
                 'timestamp': datetime.now().isoformat()
             }
-    
+
+
     # Helper methods
     
     def _prepare_context(self, chunks: List[Dict]) -> str:
-        """Prepare context text from chunks with source information."""
+        """Prepare context string from chunks, including metadata."""
+        if not chunks:
+            return "No specific context from the document was found for this query."
         context_parts = []
         for chunk in chunks:
             source_info = ""
@@ -411,37 +418,53 @@ class KenshoAIAssistant:
         return "\n\n".join(context_parts)
     
     def _get_rag_system_prompt(self) -> str:
-        """Get system prompt for RAG-based question answering."""
+        """Get the system prompt for the AI tutor."""
         return """
-        You are Kensho, a mindful AI learning assistant. Your purpose is to help users gain deep understanding, not just surface-level answers.
-        
-        When answering questions:
-        - Provide accurate, well-reasoned responses based on the given context
-        - Include specific citations when referencing information
-        - If the context is insufficient, clearly state what information is missing
-        - Encourage deeper thinking by suggesting related questions or concepts to explore
-        - Maintain a tone that is wise, encouraging, and focused on genuine learning
-        
-        Remember: You are a mirror for insight, not just an information retrieval system.
+        You are 'Kensho', a friendly and knowledgeable AI Tutor. Your goal is to help users understand their documents and learn new concepts.
+
+        Your personality:
+        - Patient, encouraging, and adaptive.
+        - You break down complex topics into simple, digestible pieces.
+        - You ask clarifying questions to check for understanding and guide the user's learning.
+        - You can be a bit informal and use emojis to make learning more engaging.
+
+        How you'll answer:
+        1.  **Use the Provided CONTEXT First**: Incorporate relevant excerpts from the documents the user uploaded to ground your answer, but you no longer need to insert explicit citation tags.
+        2.  **Bring in General Knowledge When Needed**: If the CONTEXT is sparse or the question goes beyond it, add helpful background from your broader knowledge. Preface these parts with phrases like "From my general knowledge..." so the learner knows the origin.
+        3.  **Stay Conversational**: Weave your replies into the ongoing chat, referencing earlier turns so the conversation feels continuous and natural.
+        4.  **Guide, Don't Just Answer**: Coach the learner. Break complex ideas into steps, ask clarifying questions, and suggest next learning actions.
+        5.  **Be Honest About Uncertainty**: If you're not sure, say so plainly and propose follow-up steps (e.g., "We could look this up with a web search tool").
         """
     
     def _get_summary_system_prompt(self, summary_type: str) -> str:
-        """Get system prompt for different summary types."""
-        prompts = {
-            "comprehensive": "Create a comprehensive summary that captures all key points and important details.",
-            "key_points": "Extract and summarize only the most important key points and main ideas.",
-            "executive": "Create an executive summary focused on actionable insights and key takeaways."
-        }
-        
-        base_prompt = """
-        You are Kensho, a mindful AI learning assistant. Create summaries that promote deep understanding.
-        Focus on insights, connections between ideas, and the broader significance of the content.
-        """
-        
-        return base_prompt + "\n" + prompts.get(summary_type, prompts["comprehensive"])
+        """Get the system prompt for generating summaries."""
+        if summary_type == "comprehensive":
+            prompt = """
+            You are a meticulous academic assistant. Your task is to create a comprehensive, detailed summary of the provided text.
+            - Capture all main arguments, key evidence, and conclusions.
+            - Preserve the original nuance and tone.
+            - Organize the summary logically with clear paragraphs.
+            - Mention any important figures, data, or examples.
+            """
+        elif summary_type == "key_points":
+            prompt = """
+            You are a productivity expert. Your task is to extract the most critical key points from the text and present them as a concise bulleted list.
+            - Each bullet point should represent a single, core idea.
+            - Start each point with a strong action verb if possible.
+            - Focus on actionable insights, main findings, or critical definitions.
+            """
+        else:  # executive
+            prompt = """
+            You are a strategy consultant briefing a busy executive. Your task is to provide a short, high-level executive summary.
+            - Start with a one-sentence summary of the main outcome or conclusion.
+            - Briefly cover the core problem, methodology, and key findings.
+            - Focus on the "so what?" – the implications and strategic importance.
+            - Keep it concise and to the point.
+            """
+        return prompt
     
     def _extract_sources_from_chunks(self, chunks: List[Dict]) -> List[Dict]:
-        """Extract source information from chunks."""
+        """Extract unique sources from a list of chunks."""
         sources = []
         for chunk in chunks:
             source = {
@@ -455,10 +478,17 @@ class KenshoAIAssistant:
             
             sources.append(source)
         
-        return sources
+        # Remove duplicates
+        unique_sources = {}
+        for source in sources:
+            key = (source['type'], source['source'])
+            if key not in unique_sources:
+                unique_sources[key] = source
+        
+        return list(unique_sources.values())
     
     def _extract_citations_from_answer(self, answer: str) -> List[str]:
-        """Extract citations from the answer text."""
+        """Extract [source: ...] citations from the AI's answer."""
         citations = []
         
         # Look for page citations
@@ -506,21 +536,36 @@ class KenshoAIAssistant:
     
     def _extract_key_topics(self, text: str) -> List[str]:
         """Extract key topics from text using simple keyword extraction."""
-        # Simple topic extraction - in a real implementation, you might use NLP libraries
-        words = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', text)
-        
-        # Filter and count
-        topic_counts = {}
-        for word in words:
-            if len(word) > 3:  # Filter short words
-                topic_counts[word] = topic_counts.get(word, 0) + 1
-        
-        # Return top topics
-        sorted_topics = sorted(topic_counts.items(), key=lambda x: x[1], reverse=True)
-        return [topic for topic, count in sorted_topics[:10]]
-    
+        if not text:
+            return []
+
+        try:
+            system_prompt = "You are an expert at identifying key themes. Extract the main topics from the text below. Return a JSON list of strings."
+            user_prompt = f"TEXT: {text[:4000]}\n\nTOPICS:"
+
+            response = self.client.chat.completions.create(
+                model=self.default_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=200,
+                response_format={"type": "json_object"}
+            )
+            
+            # The response is expected to be a JSON object like {"topics": ["topic1", "topic2"]}
+            data = json.loads(response.choices[0].message.content)
+            return data.get("topics", [])
+            
+        except Exception:
+            # Fallback for models that don't support JSON mode well or other errors
+            # Simple regex as a fallback
+            topics = re.findall(r'"(.*?)"', text)
+            return list(set(topics))[:5] # Return up to 5 unique topics
+
     def _parse_flashcards_response(self, response_text: str) -> List[Dict]:
-        """Parse flashcards from AI response."""
+        """Parse the AI's response to extract flashcards, resiliently."""
         try:
             # Try to parse as JSON
             if response_text.strip().startswith('['):
@@ -548,35 +593,17 @@ class KenshoAIAssistant:
             }]
     
     def _parse_quiz_response(self, response_text: str) -> Dict:
-        """Parse quiz from AI response."""
+        """Parse the AI's response to extract quiz questions, resiliently."""
         try:
-            # Try to parse as JSON
-            if response_text.strip().startswith('{'):
-                return json.loads(response_text)
-            
-            # Look for JSON object in the response
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group())
-            
-            # Fallback: create error quiz
-            return {
-                'questions': [{
-                    'question': "Error parsing quiz",
-                    'options': ["A) Try again", "B) Check content", "C) Verify setup", "D) Contact support"],
-                    'correct_answer': "A",
-                    'explanation': "There was an error parsing the quiz. Please try again.",
-                    'difficulty': "error"
-                }]
-            }
-            
-        except Exception:
-            return {
-                'questions': [{
-                    'question': "Error parsing quiz",
-                    'options': ["A) Try again", "B) Check content", "C) Verify setup", "D) Contact support"],
-                    'correct_answer': "A",
-                    'explanation': "There was an error parsing the quiz. Please try again.",
-                    'difficulty': "error"
-                }]
-            } 
+            # The response should be a JSON object with a "questions" key
+            # which is a list of question objects.
+            quiz_data = json.loads(response_text)
+            if isinstance(quiz_data, dict) and "questions" in quiz_data:
+                return quiz_data
+            else:
+                # Handle cases where the JSON is just the list itself
+                return {"questions": quiz_data}
+        except json.JSONDecodeError:
+            # Fallback for malformed JSON
+            print("⚠️ Warning: Failed to decode JSON from quiz response. Using fallback.")
+            return {"questions": [{"question": "Error parsing quiz data.", "options": [], "answer": ""}]} 
